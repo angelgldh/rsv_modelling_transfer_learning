@@ -1,3 +1,5 @@
+import pandas as pd
+
 def make_it_categorical(df, is_phase1 = True):
 
   factor_columns = ["sex","race","marital_status","patient_regional_location","age_group",
@@ -46,6 +48,10 @@ def make_it_categorical(df, is_phase1 = True):
   columns_to_categorize = list(factor_columns_set.intersection(set(df.columns)))
 
   df[columns_to_categorize] = df[columns_to_categorize].apply(lambda x : x.astype('category'))
+
+  # Extra step: convert index_date to date
+
+  df['index_date'] = pd.to_datetime(df['index_date']).dt.date
 
   return df
 
