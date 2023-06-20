@@ -108,3 +108,14 @@ def summary_function_rsv(df, is_phase1 = True):
 
 
 
+def aggregate_same_day_test_results(group):
+    results = group['RSV_test_result']
+    # All same-day tests are NEGATIVE
+    if (results == 'Negative').all():
+        return 'NegNeg'
+    # All same-day tests are POSITIVE
+    elif (results == 'Positive').all():
+        return 'PosPos'
+    # Mix of positive and negative
+    else:
+        return 'PosNeg'
