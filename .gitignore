@@ -1,5 +1,5 @@
 # Byte-compiled / optimized / DLL files
-/rsv_modelling_transfer_learning/datasets/
+/datasets/
 
 __pycache__/
 *.py[cod]
