@@ -21,8 +21,10 @@ def preprocess_rsv (df1, input_test_size = 0.2, random_seed = 42):
     numeric_features_left = ['sine', 'cosine']
 
     # 2. Define transformers for every feature type and build the preprocessor
-    categorical_transformer = OneHotEncoder(drop_invariant=True, )
+    # 2.1 First, dummy encode categoricals
+    df1 = pd.get_dummies(df1, columns=categorical_features, drop_first= True)
 
+    # 2.2. Second, transform the numerical features
     right_transformer = Pipeline(steps=[
         ('log', FunctionTransformer(np.log1p, validate=False)),
         ('scaler', StandardScaler())
@@ -35,7 +37,6 @@ def preprocess_rsv (df1, input_test_size = 0.2, random_seed = 42):
 
     preprocessor = ColumnTransformer(
         transformers=[
-            ('cat', categorical_transformer, categorical_features),
             ('num_right', right_transformer, numeric_features_right),
             ('num_left', left_transformer, numeric_features_left)
         ])
@@ -48,4 +49,4 @@ def preprocess_rsv (df1, input_test_size = 0.2, random_seed = 42):
     X_train_transformed = preprocessor.fit_transform(X_train)
     X_test_transformed = preprocessor.transform(X_test)
 
-    return X_train_transformed, y_train, X_test_transformed, y_test
+    return df1, X_train_transformed, y_train, X_test_transformed, y_test
