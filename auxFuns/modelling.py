@@ -9,7 +9,6 @@ from sklearn.metrics import f1_score, make_scorer, confusion_matrix, roc_auc_sco
 from sklearn.preprocessing import FunctionTransformer, StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from category_encoders import OneHotEncoder
 
 def preprocess_rsv (df1, input_test_size = 0.2, random_seed = 42):
 
@@ -49,4 +48,4 @@ def preprocess_rsv (df1, input_test_size = 0.2, random_seed = 42):
     X_train_transformed = preprocessor.fit_transform(X_train)
     X_test_transformed = preprocessor.transform(X_test)
 
-    return df1, X_train_transformed, y_train, X_test_transformed, y_test
+    return X_train_transformed, y_train, X_test_transformed, y_test
