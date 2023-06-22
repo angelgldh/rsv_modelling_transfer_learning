@@ -32,12 +32,14 @@ def preprocess_rsv (df1, input_test_size = 0.2, random_seed = 42):
     # 1. Select the features that are needed to be processed and how
     categorical_features = df1.select_dtypes(include=['category']).columns.tolist()
     categorical_features.remove('RSV_test_result')
+    categorical_features.remove('calendar_year') # the reason behind this is that we will introduce manually the categories for calendar_year
 
     numeric_features_right = ['CCI', 'n_symptoms', 'prev_positive_rsv', 'previous_test_daydiff', 'n_immunodeficiencies']
     numeric_features_left = ['sine', 'cosine']
 
     # 2. Define transformers for every feature type and build the preprocessor
     categorical_transformer = OneHotEncoder(drop = 'first')
+    calendar_year_transformer = OneHotEncoder(categories= [sorted(list(df1['calendar_year'].unique()))] , drop = 'first')
 
     right_transformer = Pipeline(steps=[
         ('log', FunctionTransformer(np.log1p, validate=False)),
@@ -52,6 +54,7 @@ def preprocess_rsv (df1, input_test_size = 0.2, random_seed = 42):
     preprocessor = ColumnTransformer(
         transformers=[
             ('cat', categorical_transformer, categorical_features),
+            ('cal_year',calendar_year_transformer, ['calendar_year']),
             ('num_right', right_transformer, numeric_features_right),
             ('num_left', left_transformer, numeric_features_left)
         ])
