@@ -66,7 +66,7 @@ def preprocess_rsv (df1, input_test_size = 0.2, random_seed = 42):
     # 3. Transform the data
     X = df1.drop(['RSV_test_result'], axis=1)
     y = df1['RSV_test_result']
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size= input_test_size, random_state=random_seed)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size= input_test_size, random_state=random_seed, stratify=y)
 
     X_train_transformed = preprocessor.fit_transform(X_train)
     X_test_transformed = preprocessor.transform(X_test)
@@ -199,57 +199,6 @@ def train_model_rsv(model, param_grid, target_scorer, n_cv_folds,
     return grid_search
 
 
-def train_model_rsv_no(model, param_grid, target_scorer, n_cv_folds,
-                    X_train, y_train, resampling_technique = None, random_seed = 42,
-                    ratio_maj_min = 0.8):
-    """
-    Trains a model for the RSV phase 1 modelling stage using grid search and cross-validation.
-
-    Parameters:
-    - model (object): The model object or estimator to be trained.
-    - param_grid (dict): The dictionary of parameter grid for grid search.
-    - target_scorer (str oor callable): The scoring metric for evaluating the model.
-    - n_cv_folds (ind): The number of cross-validation folds.
-    - X_train (nd-array): The training features (array-like or sparse matrix).
-    - y_train (pd.series): The training labels (array-like).
-
-    Returns:
-    - grid_search (GridSearchCV): The trained grid search object.
-    """
-    print("Resampling method chosen:")
-
-    if resampling_technique == "over":
-        print("\nOversampling")
-        resampler = RandomOverSampler(sampling_strategy= ratio_maj_min,random_state=random_seed)
-
-    elif resampling_technique == "under":
-        print("\nUndersampling")
-        resampler = RandomUnderSampler(sampling_strategy= ratio_maj_min,random_state=random_seed)
-
-    elif resampling_technique == "smotenc":
-        print("\nSMOTE-sampling")
-        resampler = SMOTENC(categorical_features = [1,2],
-                            sampling_strategy= ratio_maj_min,random_state=random_seed)
-
-    elif resampling_technique is None:
-        print("\nNone")
-
-    else:
-        raise ValueError("Please, indicate a resampling technique. Accepted values are ['over', 'under', 'smotenc', None]")
-    
-    pipeline = ImbPipeline(steps = [('resampler', resampler),
-                                    ('model', model)])
-
-    grid_search = GridSearchCV(estimator=pipeline, param_grid=param_grid, scoring=target_scorer, cv=n_cv_folds)
-
-    print(f'Training model ... {model}')
-
-    grid_search.fit(X_train, y_train)
-
-    print('Best training parameters: ', grid_search.best_params_)
-    print('Best training f1-score: ', grid_search.best_score_)
-
-    return grid_search
 
 def find_optimal_moving_threshold(model, X_test, y_test):
     """

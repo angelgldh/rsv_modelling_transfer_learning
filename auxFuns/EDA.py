@@ -119,3 +119,14 @@ def aggregate_same_day_test_results(group):
     # Mix of positive and negative
     else:
         return 'PosNeg'
+
+
+def get_season_rsv(month):
+    if (month >= 3) and (month <= 5):
+        return 'spring'
+    elif (month >= 6) and (month <= 8):
+        return 'summer'
+    elif (month >= 9) and (month <= 11):
+        return 'autumn'
+    else:
+        return 'winter'
