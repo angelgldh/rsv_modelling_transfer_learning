@@ -332,16 +332,17 @@ def get_feature_names_OneHotEncoder_preprocessor(column_transformer):
     return feature_names
 
 
-def plot_feature_importance_rf_rsv(preprocessor_rsv, trained_model):
+def feature_importance_rf_rsv(preprocessor_rsv, trained_model, plot_importances = True):
     """
     Plots the feature importances for the Random Forest model used in the RSV modelling phase 1.
 
     Parameters:
     - preprocessor_rsv (ColumnTransformer): The preprocessor object used for feature transformations.
     - trained_model (GridSearchCV): The trained Random Forest model object.
+    - plot_importances (boolean): indicates if the feature importance diagram is plotted or not
 
     Returns:
-    - None
+    - importance_df
     """
 
     # As the preprocessing of data transformed the features names too, it is needed to retrieve the new names 
@@ -355,12 +356,15 @@ def plot_feature_importance_rf_rsv(preprocessor_rsv, trained_model):
     importance_df = importance_df.sort_values('importance', ascending=True)
 
     # Final plot
-    importance_df.plot(kind='barh', x='feature', y='importance', legend=False, figsize=(10, 20))
+    if plot_importances: 
+        importance_df.plot(kind='barh', x='feature', y='importance', legend=False, figsize=(10, 20))
 
-    plt.title('Feature Importances')
-    plt.xlabel('Importance')
-    plt.ylabel('Features')
-    plt.show()
+        plt.title('Feature Importances')
+        plt.xlabel('Importance')
+        plt.ylabel('Features')
+        plt.show()
+
+    return importance_df
 
 
 
