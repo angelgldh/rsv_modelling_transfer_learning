@@ -405,9 +405,12 @@ def preprocess_and_resample_flag_rsv (df1, flag_value, input_test_size = 0.2, ra
     categorical_features = X_train.select_dtypes(include=['category']).columns.tolist()
     # categorical_features.remove('RSV_test_result')
     categorical_mask = X_train.columns.isin(categorical_features)
-    categorical_features.remove('calendar_year') # the reason behind this is that we will introduce manually the categories for calendar_year
-    categorical_features.remove('sex') # the reason behind this is that we will introduce manually the categories for sex
-    categorical_features.remove('race') # the reason behind this is that we will introduce manually the categories for race
+    if 'calendar_year' in categorical_features:
+        categorical_features.remove('calendar_year') # the reason behind this is that we will introduce manually the categories for calendar_year
+    if 'sex' in categorical_features:
+        categorical_features.remove('sex') # the reason behind this is that we will introduce manually the categories for sex
+    if 'race' in categorical_features:
+        categorical_features.remove('race') # the reason behind this is that we will introduce manually the categories for race
 
     numeric_features_right = ['CCI', 'n_symptoms', 'prev_positive_rsv', 'previous_test_daydiff', 'n_immunodeficiencies']
     numeric_features_left = ['sine', 'cosine']
@@ -457,15 +460,22 @@ def preprocess_and_resample_flag_rsv (df1, flag_value, input_test_size = 0.2, ra
         ('scaler', StandardScaler())
     ])
 
-    preprocessor = ColumnTransformer(
-        transformers=[
+    # Finally: include all transformers
+    custom_transformers=[
             ('cat', categorical_transformer, categorical_features),
             ('cal_year',calendar_year_transformer, ['calendar_year']),
             ('se', sex_transformer, ['sex']),
-            ('rac', race_transformer, ['race']),
             ('num_right', right_transformer, numeric_features_right),
             ('num_left', left_transformer, numeric_features_left)
-        ])
+        ]
+    
+    # Exception handling: some features may not be present in the final predictor space
+    if 'race' in X_train.select_dtypes(include=['category']).columns.tolist():
+        custom_transformers.insert(1, ('rac', race_transformer, ['race']))
+
+    preprocessor = ColumnTransformer(
+        transformers = custom_transformers
+        )
 
     # 4. Finally, transform the data
 
