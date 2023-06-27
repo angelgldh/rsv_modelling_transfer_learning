@@ -12,6 +12,8 @@ from sklearn.pipeline import Pipeline
 from imblearn.over_sampling import RandomOverSampler, SMOTEN, SMOTENC
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.pipeline import Pipeline as ImbPipeline
+from sklearn.utils import class_weight
+
 
 def preprocess_rsv (df1, input_test_size = 0.2, random_seed = 42):
     """
@@ -128,12 +130,53 @@ def preprocess_and_resample_rsv (df1, input_test_size = 0.2, random_seed = 42,
     elif resampling_technique is None:
         print("\nNone")
 
+    elif resampling_technique == 'downsample_upweight':
+        print("\nDownsampling and Upweighting")
+        weights = class_weight.compute_sample_weight('balanced', y_train)
+        unique_weights = np.unique(weights)
+        weights_dict = {'Positive': np.max(unique_weights),
+                        'Negative': np.min(unique_weights)}
+
+        # # Downsample the majority class by a factor determined by the input 'ratio_maj_min'
+        majority_class = y_train.value_counts().idxmax()
+        minority_class = y_train.value_counts().idxmin()
+        majority_mask = y_train == majority_class
+        minority_mask = ~majority_mask
+
+        n_minority = sum(minority_mask)
+        n_majority = sum(majority_mask)
+
+        new_n_majority = np.floor(n_minority * ratio_maj_min)
+        downsample_factor = np.floor(n_majority / new_n_majority)
+
+        # this is to ensure the data is kept consistently
+        all_data = pd.concat([X_train, y_train], axis=1)
+        all_data_majority_downsampled = all_data[majority_mask].sample(
+            n = int(new_n_majority), random_state=random_seed
+        )
+        X_train_majority_downsampled = all_data_majority_downsampled.drop('RSV_test_result', axis = 1)
+        y_train_majority_downsampled = all_data_majority_downsampled['RSV_test_result']
+
+        X_train = pd.concat([X_train_majority_downsampled, X_train[minority_mask]], axis = 0)
+        y_train = pd.concat([y_train_majority_downsampled, y_train[minority_mask]], axis = 0)
+
+        sample_weights = np.where(y_train == 'Negative', weights_dict['Negative'] * int(downsample_factor), weights_dict['Positive'])
+
+
     else:
-        raise ValueError("Please, indicate a resampling technique. Accepted values are ['over', 'under', 'smotenc', None]")
+        raise ValueError("Please, indicate a resampling technique. Accepted values are ['over', 'under', 'smotenc', 'downsample_upweight', None]")
     
     # 2.1 Fit the resampler to the data
-    if resampling_technique is not None:
+    if resampling_technique is not None and resampling_technique != "downsample_upweight":
         X_train, y_train = resampler.fit_resample(X_train, y_train)
+
+    if resampling_technique != "downsample_upweight":
+        weights = class_weight.compute_sample_weight('balanced', y_train)
+        unique_weights = np.unique(weights)
+        weights_dict = {'Positive': np.max(unique_weights),
+                        'Negative': np.min(unique_weights)}
+        
+        sample_weights = np.where(y_train == 'Negative', weights_dict['Negative'], weights_dict['Positive'])
 
 
     # 3. Define transformers for every feature type and build the preprocessor
@@ -167,7 +210,7 @@ def preprocess_and_resample_rsv (df1, input_test_size = 0.2, random_seed = 42,
     X_train_transformed = preprocessor.fit_transform(X_train)
     X_test_transformed = preprocessor.transform(X_test)
 
-    return X_train_transformed, y_train, X_test_transformed, y_test, preprocessor
+    return X_train_transformed, y_train, X_test_transformed, y_test, sample_weights, preprocessor
 
 
 
