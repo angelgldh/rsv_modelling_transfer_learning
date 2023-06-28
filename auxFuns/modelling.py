@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV, train_test_split
-from sklearn.metrics import f1_score, make_scorer, confusion_matrix, roc_auc_score, roc_curve
+from sklearn.metrics import f1_score, make_scorer, confusion_matrix, roc_auc_score, roc_curve, precision_recall_curve, auc
 from sklearn.preprocessing import FunctionTransformer, StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -171,12 +171,16 @@ def preprocess_and_resample_rsv (df1, input_test_size = 0.2, random_seed = 42,
         X_train, y_train = resampler.fit_resample(X_train, y_train)
 
     if resampling_technique != "downsample_upweight":
-        weights = class_weight.compute_sample_weight('balanced', y_train)
-        unique_weights = np.unique(weights)
-        weights_dict = {'Positive': np.max(unique_weights),
-                        'Negative': np.min(unique_weights)}
+        # weights = class_weight.compute_sample_weight('balanced', y_train)
+        # unique_weights = np.unique(weights)
+        # weights_dict = {'Positive': np.max(unique_weights),
+        #                 'Negative': np.min(unique_weights)}
         
-        sample_weights = np.where(y_train == 'Negative', weights_dict['Negative'], weights_dict['Positive'])
+        # sample_weights = np.where(y_train == 'Negative', weights_dict['Negative'], weights_dict['Positive'])
+
+        # The idea is to not have different weights unless we decide to upweight
+        sample_weights = np.ones_like(y_train)
+
 
 
     # 3. Define transformers for every feature type and build the preprocessor
@@ -215,7 +219,7 @@ def preprocess_and_resample_rsv (df1, input_test_size = 0.2, random_seed = 42,
 
 
 def train_model_rsv(model, param_grid, target_scorer, n_cv_folds,
-                    X_train, y_train):
+                    X_train, y_train, sample_weights = None):
     """
     Trains a model for the RSV phase 1 modelling stage using grid search and cross-validation.
 
@@ -230,11 +234,14 @@ def train_model_rsv(model, param_grid, target_scorer, n_cv_folds,
     Returns:
     - grid_search (GridSearchCV): The trained grid search object.
     """
+    if sample_weights is None:
+        sample_weights = np.ones_like(y_train)
+
     grid_search = GridSearchCV(estimator=model, param_grid=param_grid, scoring=target_scorer, cv=n_cv_folds)
 
     print(f'Training model ... {model}')
 
-    grid_search.fit(X_train, y_train)
+    grid_search.fit(X_train, y_train, sample_weight = sample_weights)
 
     print('Best training parameters: ', grid_search.best_params_)
     print('Best training f1-score: ', grid_search.best_score_)
@@ -273,7 +280,7 @@ def find_optimal_moving_threshold(model, X_test, y_test):
 
     return optimal_threshold
 
-def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 0.5, print_roc = True):
+def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 0.5, print_roc = False, print_pr = False):
     """
     Calculates performance metrics for the RSV phase 1 modelling stage based on the trained model's predictions.
 
@@ -282,7 +289,8 @@ def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 
     - X_test (nd-array): The testing features.
     - y_test (pd.Series): The testing labels.
     - threshold (int): decision threshold for the binary classification
-    - print_roc (boolean): Whether to print the ROC curve. Defaults to True.
+    - print_roc (boolean): Whether to print the ROC curve. Defaults to False.
+    - print_pr (boolean): Whether to print the precision-recall curve. Defaults to False.
 
     Returns:
     - auc_score (float): The Area Under the ROC Curve .
@@ -292,6 +300,7 @@ def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 
     - npv (float): Negative Predictive Value.
     - accuracy (float): Accuracy.
     - f1 (float): F1-score.
+    - precision_recall_auc: area under the pr curve
     """
 
     # 1. First, compute predictions of the model, both pointwise and in probabilities
@@ -325,7 +334,12 @@ def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 
 
     auc_score = roc_auc_score(aux_y_test, y_probs)
 
-    # 4. Print metrics and (if requested) the ROC Curve
+    # 4. Precision-recall curve
+    precisions, recalls, _ = precision_recall_curve(aux_y_test, y_probs)
+    precision_recall_auc = auc(recalls, precisions)
+
+
+    # 5. Print metrics and (if requested) the ROC Curve
     print(f'AUC Score: {auc_score}')
     print(f'Precision / Positive predictive value: {precision}')
     print(f'Specificity: {specificity}')
@@ -333,6 +347,8 @@ def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 
     print(f'Negative predictive value: {npv}')
     print(f'Accuracy: {accuracy}')
     print(f'F-1: {f1}')
+    print(f'Precision-Recall AUC: {precision_recall_auc}')
+
 
     if print_roc:
         plt.figure()
@@ -346,7 +362,18 @@ def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 
         plt.legend(loc="lower right")
         plt.show()
 
-    return auc_score, precision, recall, specificity, npv, accuracy, f1
+    if print_pr:
+        plt.figure()
+        plt.plot(recalls, precisions, label='PR curve (area = %0.2f)' % precision_recall_auc)
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.0])
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title('Precision-Recall curve')
+        plt.legend(loc="upper right")
+        plt.show()
+
+    return auc_score, precision, recall, specificity, npv, accuracy, f1, precision_recall_auc
 
 
 def get_feature_names_OneHotEncoder_preprocessor(column_transformer):
