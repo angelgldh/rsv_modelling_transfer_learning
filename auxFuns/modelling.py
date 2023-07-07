@@ -78,7 +78,7 @@ def preprocess_rsv (df1, input_test_size = 0.2, random_seed = 42):
 def build_preprocessor(X_train):
     """
     This is a part of the preprocess_and_resample_rsv function, where only the code building the preprocessor is taken
-     
+
     Builds a preprocessor object for feature transformations based on the input training data.
 
     The function performs the following steps:
@@ -138,6 +138,153 @@ def build_preprocessor(X_train):
     
     return preprocessor
 
+def upsample_downsample (X_train, y_train, ratio_maj_min, random_seed = 42):
+    all_data = pd.concat([X_train, y_train], axis=1)
+    
+    # Identify majority and minority classes
+    majority_mask = y_train == 'Negative'
+    minority_mask = y_train == 'Positive'
+
+    majority_data = all_data[majority_mask]
+    minority_data = all_data[minority_mask]
+    
+    # Oversample minority class using pandas sample method
+    over_ratio = ratio_maj_min / 2
+    minority_data_upsampled = minority_data.sample(n=int(majority_data.shape[0]*over_ratio), replace=True, random_state=random_seed)
+
+    # Concatenate upsampled minority class with majority class
+    X_temp = pd.concat([majority_data.drop('RSV_test_result', axis = 1), minority_data_upsampled.drop('RSV_test_result', axis = 1)], axis=0)
+    y_temp = pd.concat([majority_data['RSV_test_result'], minority_data_upsampled['RSV_test_result']], axis=0)
+    
+    # Downsample majority class to achieve the desired ratio
+    n_minority_upsampled = len(minority_data_upsampled)
+    n_majority_downsampled = int(ratio_maj_min * n_minority_upsampled) 
+
+    majority_data_downsampled = majority_data.sample(n=n_majority_downsampled, random_state=random_seed)
+
+    # Concatenate downsampled majority class with upsampled minority class
+    X_train_res = pd.concat([majority_data_downsampled.drop('RSV_test_result', axis = 1), minority_data_upsampled.drop('RSV_test_result', axis = 1)], axis=0)
+    y_train_res = pd.concat([majority_data_downsampled['RSV_test_result'], minority_data_upsampled['RSV_test_result']], axis=0)
+
+    # Shuffle the resulting data
+    X_train_res = X_train_res.sample(frac=1, random_state=random_seed).reset_index(drop=True)
+    y_train_res = y_train_res.sample(frac=1, random_state=random_seed).reset_index(drop=True)
+
+    return X_train_res, y_train_res
+
+def downsampling_upweighting (X_train, y_train, ratio_maj_min, random_seed = 42):
+    """
+    This is a part of the preprocess_and_resample_rsv function, where only the code building the downsampling and upweighting is taken
+    Applies downsampling and upweighting to balance the classes in the training data.
+
+    The function performs the following steps:
+    1. Computes sample weights using the 'balanced' strategy.
+    2. Determines the downsample factor based on the ratio between majority and minority classes.
+    3. Downsamples the majority class to match the desired ratio.
+    4. Combines the downsampled majority class with the minority class.
+    5. Assigns sample weights to each sample based on its class.
+
+    Parameters:
+    - X_train (DataFrame): The input training features.
+    - y_train (pd.Series): The input training labels.
+    - ratio_maj_min (float): The desired ratio between the majority and minority classes.
+    - random_seed (int): The random seed value for reproducibility. Defaults to 42.
+
+    Returns:
+    - X_train_out (DataFrame): The transformed training features with balanced classes.
+    - y_train_out (pd.Series): The transformed training labels with balanced classes.
+    - sample_weights (ndarray): The sample weights assigned to each training sample.
+
+    """
+    # Build the downsampling and upweighting process
+    weights = class_weight.compute_sample_weight('balanced', y_train)
+    unique_weights = np.unique(weights)
+    weights_dict = {'Positive': np.max(unique_weights),
+                    'Negative': np.min(unique_weights)}
+
+    # # Downsample the majority class by a factor determined by the input 'ratio_maj_min'
+    majority_class = y_train.value_counts().idxmax()
+    minority_class = y_train.value_counts().idxmin()
+    majority_mask = y_train == majority_class
+    minority_mask = ~majority_mask
+
+    n_minority = sum(minority_mask)
+    n_majority = sum(majority_mask)
+
+    new_n_majority = np.floor(n_minority * ratio_maj_min)
+    downsample_factor = np.floor(n_majority / new_n_majority)
+
+    # this is to ensure the data is kept consistently
+    all_data = pd.concat([X_train, y_train], axis=1)
+    all_data_majority_downsampled = all_data[majority_mask].sample(
+        n = int(new_n_majority), random_state=random_seed
+    )
+    X_train_majority_downsampled = all_data_majority_downsampled.drop('RSV_test_result', axis = 1)
+    y_train_majority_downsampled = all_data_majority_downsampled['RSV_test_result']
+
+    X_train_out = pd.concat([X_train_majority_downsampled, X_train[minority_mask]], axis = 0)
+    y_train_out = pd.concat([y_train_majority_downsampled, y_train[minority_mask]], axis = 0)
+
+    sample_weights = np.where(y_train_out == 'Negative', weights_dict['Negative'] * int(downsample_factor), weights_dict['Positive'])
+
+    return X_train_out, y_train_out, sample_weights
+
+def downsampling_upweighting (X_train, y_train, ratio_maj_min, random_seed = 42):
+    """
+    This is a part of the preprocess_and_resample_rsv function, where only the code building the downsampling and upweighting is taken
+    Applies downsampling and upweighting to balance the classes in the training data.
+
+    The function performs the following steps:
+    1. Computes sample weights using the 'balanced' strategy.
+    2. Determines the downsample factor based on the ratio between majority and minority classes.
+    3. Downsamples the majority class to match the desired ratio.
+    4. Combines the downsampled majority class with the minority class.
+    5. Assigns sample weights to each sample based on its class.
+
+    Parameters:
+    - X_train (DataFrame): The input training features.
+    - y_train (pd.Series): The input training labels.
+    - ratio_maj_min (float): The desired ratio between the majority and minority classes.
+    - random_seed (int): The random seed value for reproducibility. Defaults to 42.
+
+    Returns:
+    - X_train_out (DataFrame): The transformed training features with balanced classes.
+    - y_train_out (pd.Series): The transformed training labels with balanced classes.
+    - sample_weights (ndarray): The sample weights assigned to each training sample.
+
+    """
+    # Build the downsampling and upweighting process
+    weights = class_weight.compute_sample_weight('balanced', y_train)
+    unique_weights = np.unique(weights)
+    weights_dict = {'Positive': np.max(unique_weights),
+                    'Negative': np.min(unique_weights)}
+
+    # # Downsample the majority class by a factor determined by the input 'ratio_maj_min'
+    majority_class = y_train.value_counts().idxmax()
+    minority_class = y_train.value_counts().idxmin()
+    majority_mask = y_train == majority_class
+    minority_mask = ~majority_mask
+
+    n_minority = sum(minority_mask)
+    n_majority = sum(majority_mask)
+
+    new_n_majority = np.floor(n_minority * ratio_maj_min)
+    downsample_factor = np.floor(n_majority / new_n_majority)
+
+    # this is to ensure the data is kept consistently
+    all_data = pd.concat([X_train, y_train], axis=1)
+    all_data_majority_downsampled = all_data[majority_mask].sample(
+        n = int(new_n_majority), random_state=random_seed
+    )
+    X_train_majority_downsampled = all_data_majority_downsampled.drop('RSV_test_result', axis = 1)
+    y_train_majority_downsampled = all_data_majority_downsampled['RSV_test_result']
+
+    X_train_out = pd.concat([X_train_majority_downsampled, X_train[minority_mask]], axis = 0)
+    y_train_out = pd.concat([y_train_majority_downsampled, y_train[minority_mask]], axis = 0)
+
+    sample_weights = np.where(y_train_out == 'Negative', weights_dict['Negative'] * int(downsample_factor), weights_dict['Positive'])
+
+    return X_train_out, y_train_out, sample_weights
 
 
 def preprocess_and_resample_rsv (df1, input_test_size = 0.2, random_seed = 42, 
