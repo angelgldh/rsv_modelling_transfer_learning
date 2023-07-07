@@ -75,12 +75,80 @@ def preprocess_rsv (df1, input_test_size = 0.2, random_seed = 42):
 
     return X_train_transformed, y_train, X_test_transformed, y_test, preprocessor
 
+def build_preprocessor(X_train):
+    """
+    This is a part of the preprocess_and_resample_rsv function, where only the code building the preprocessor is taken
+     
+    Builds a preprocessor object for feature transformations based on the input training data.
+
+    The function performs the following steps:
+    1. Selects the categorical and numeric features to be processed.
+    2. Defines transformers for each feature type.
+    3. Combines the transformers into a ColumnTransformer.
+
+    Parameters:
+    - X_train (DataFrame): The input training data.
+
+    Returns:
+    - preprocessor (ColumnTransformer): The preprocessor object used for feature transformations.
+
+    """
+
+    # 1. Select the features that are needed to be processed and how
+    categorical_features = X_train.select_dtypes(include=['category']).columns.tolist()
+    # categorical_features.remove('RSV_test_result')
+    # categorical_mask = X_train.columns.isin(categorical_features)
+    # the reason behind this is that we will introduce manually the categories for calendar_year, race and sex
+    categorical_features.remove('calendar_year') 
+    categorical_features.remove('sex') 
+    categorical_features.remove('race') 
+
+    numeric_features_right = ['CCI', 'n_symptoms', 'prev_positive_rsv', 'previous_test_daydiff', 'n_immunodeficiencies']
+    numeric_features_left = ['sine', 'cosine']
+
+    # 2. Define transformers for every feature type and build the preprocessor
+    # 2.1 Categorical features first
+    categorical_transformer = OneHotEncoder(drop = 'first')
+    calendar_year_transformer = OneHotEncoder(categories= [[2000,2001, 2002, 2003, 2004,2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022]] , drop = 'first')
+    sex_transformer = OneHotEncoder(categories= [['Unknown', 'F', 'M']] , drop = 'first')
+    race_transformer = OneHotEncoder(categories= [[ 'Unknown','White', 'Black', 'Asian', 'Native American','Pacific']] , drop = 'first')
+
+    # 2.2. Numeric features second
+    right_transformer = Pipeline(steps=[
+        ('log', FunctionTransformer(np.log1p, validate=False)),
+        ('scaler', StandardScaler())
+    ])
+
+    left_transformer = Pipeline(steps=[
+        ('exp', FunctionTransformer(np.exp, validate=False)),
+        ('scaler', StandardScaler())
+    ])
+
+    # 3. Finally, put all together and 
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('cat', categorical_transformer, categorical_features),
+            ('cal_year',calendar_year_transformer, ['calendar_year']),
+            ('se', sex_transformer, ['sex']),
+            ('rac', race_transformer, ['race']),
+            ('num_right', right_transformer, numeric_features_right),
+            ('num_left', left_transformer, numeric_features_left)
+        ])
+    
+    return preprocessor
+
+
 
 def preprocess_and_resample_rsv (df1, input_test_size = 0.2, random_seed = 42, 
                              resampling_technique = None, ratio_maj_min = 0.8):
     """
     Preprocesses the input data for the RSV phase 1 modelling stage, by applying feature 
     transformations and splitting the data into training and testing sets.
+    The process, in order, is the following:
+    1. Split the data in train and test 
+    2. Resample the train data (X_train and y_train)
+    3. Transform the X data (X_train and X_test)
 
     Parameters:
     - df1 (DataFrame): The input DataFrame containing the data to be processed.
