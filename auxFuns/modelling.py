@@ -465,7 +465,8 @@ def train_model_rsv(model, param_grid, target_scorer, n_cv_folds,
 
 
 
-def find_optimal_moving_threshold(model, X_test, y_test):
+def find_optimal_moving_threshold(model, X_test, y_test, 
+                                  ICLL = False):
     """
     This function finds the optimal threshold for a binary classifier that maximizes the F1 score
 
@@ -479,8 +480,10 @@ def find_optimal_moving_threshold(model, X_test, y_test):
     """
     aux_y_test = [1 if label == 'Positive' else 0 for label in y_test]
 
-
-    y_probs = model.predict_proba(X_test)[:, 1]  # get the predicted probabilities for positive class
+    if ICLL:
+        y_probs = model.predict_proba(X_test)
+    else:
+        y_probs = model.predict_proba(X_test)[:, 1]  # get the predicted probabilities for positive class
 
     thresholds = np.arange(0, 1, 0.01)  # generate a range of possible thresholds
 
@@ -495,7 +498,8 @@ def find_optimal_moving_threshold(model, X_test, y_test):
 
     return optimal_threshold
 
-def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 0.5, print_roc = False, print_pr = False):
+def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 0.5, print_roc = False, print_pr = False,
+                                  ICLL = False):
     """
     Calculates performance metrics for the RSV phase 1 modelling stage based on the trained model's predictions.
 
@@ -520,7 +524,11 @@ def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 
 
     # 1. First, compute predictions of the model, both pointwise and in probabilities
     # y_pred = trained_model.predict(X_test)
-    y_probs = trained_model.predict_proba(X_test)[:, 1]
+    if ICLL:
+        y_probs = trained_model.predict_proba(X_test)
+    else:
+        y_probs = trained_model.predict_proba(X_test)[:, 1]  # get the predicted probabilities for positive class
+
     y_pred = ["Positive" if p > threshold else "Negative"  for p in y_probs]
 
     # 2. Calculate the confusion matrix metrics
