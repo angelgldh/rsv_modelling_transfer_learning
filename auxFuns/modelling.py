@@ -800,3 +800,20 @@ def train_model_flag_rsv(model, param_grid, target_scorer, n_cv_folds,
     print('Best training f1-score: ', grid_search.best_score_)
 
     return grid_search
+
+
+def plot_3FMDA_planes(df, hue_target, palette = None, main_title = ''):
+    f, axes = plt.subplots(1, 3, figsize=(12, 6))
+
+    sns.scatterplot(data=df, x=0, y=1, hue=hue_target, ax=axes[0], s = 1, palette = palette)
+    axes[0].set_title('Component 1 vs Component 2')
+
+    sns.scatterplot(data=df, x=0, y=2, hue=hue_target, ax=axes[1], s = 1, palette = palette)
+    axes[1].set_title('Component 1 vs Component 3')
+
+    sns.scatterplot(data=df, x=1, y=2, hue=hue_target, ax=axes[2], s = 1, palette = palette)
+    axes[2].set_title('Component 2 vs Component 3')
+
+    f.suptitle(main_title)
+
+    plt.tight_layout()
