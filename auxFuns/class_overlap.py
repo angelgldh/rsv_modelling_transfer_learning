@@ -18,8 +18,9 @@ def plot_3FMDA_planes(df, hue_target, palette = None, main_title = ''):
     sns.scatterplot(data=df, x=1, y=2, hue=hue_target, ax=axes[2], s = 1, palette = palette)
     axes[2].set_title('Component 2 vs Component 3')
 
-    f.suptitle(main_title)
-
+    f.suptitle(main_title, y=0.92)
+    plt.subplots_adjust(top=0.90)
+    
     plt.tight_layout()
 
 def plot_5FMDA_planes(df, hue_target, palette = None, main_title = '', s_size = 1):
@@ -56,8 +57,8 @@ def plot_5FMDA_planes(df, hue_target, palette = None, main_title = '', s_size = 
     sns.scatterplot(data=df, x=3, y=4, hue=hue_target, ax=axes[4, 1], s = s_size, palette=palette)
     axes[4, 1].set_title('Component 4 vs Component 5')
     
-    f.suptitle(main_title)
-
+    f.suptitle(main_title, y=0.92)
+    plt.subplots_adjust(top=0.90)
     plt.tight_layout()
 
 
