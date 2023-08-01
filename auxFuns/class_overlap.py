@@ -5,6 +5,10 @@ from scipy.spatial.distance import euclidean, hamming
 from sklearn.metrics import pairwise_distances
 import seaborn as sns
 import matplotlib.pyplot as plt
+from auxFuns.modelling import train_model_rsv, find_optimal_moving_threshold, calculate_performance_metrics_rsv
+from sklearn.metrics import make_scorer, f1_score, confusion_matrix, roc_auc_score, roc_curve, precision_recall_curve, auc, accuracy_score, precision_score, recall_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV, train_test_split
 
 def plot_3FMDA_planes(df, hue_target, palette = None, main_title = ''):
     f, axes = plt.subplots(1, 3, figsize=(12, 6))
@@ -116,3 +120,133 @@ def find_non_overlap_fast(df_a, df_b, distance_func):
     U = X.loc[X.index.difference(Z.index)]
     
     return Z, U
+
+def pred_custom(model1, X_test, optimal_threshold):
+    y_probs = model1.predict_proba(X_test)[:, 1]
+    pred =  ["Positive" if p > optimal_threshold else "Negative"  for p in y_probs]
+    return y_probs, pred
+
+def specificity(y_true, y_pred):
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=['Negative', 'Positive']).ravel()
+    return tn / (tn+fp)
+
+def negative_predictive_value(y_true, y_pred):
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=['Negative', 'Positive']).ravel()
+    return tn / (tn+fn)
+
+def build_and_evaluate_2overlapping_models(df1, same_class_neighbors, test_size = 0.2, random_seed = 42,
+                                           model_class_non_overlapping = RandomForestClassifier(),
+                                           param_grid_non_overlapping = {'n_estimators': [7, 14],'max_depth': [10, 20],'min_samples_split': [5, 10],'min_samples_leaf': [1, 4]},
+                                           cost_sensitive_non_overlapping = True, weight_dict_non_overlapping = {'Negative': 1, 'Positive': 15},
+                                           model_class_overlapping = RandomForestClassifier(),
+                                           param_grid_overlapping = {'n_estimators': [7, 14],'max_depth': [10, 20],'min_samples_split': [5, 10],'min_samples_leaf': [1, 4]},
+                                           cost_sensitive_overlapping = True, weight_dict_overlapping = {'Negative': 1, 'Positive': 15},
+
+                                           ):
+    # ----------------------------------
+    # Model for NON-overlapping region
+
+    print('----------------')
+    print('Building non-overlapping model ...')
+
+    df_non_overlapping = df1.loc[ same_class_neighbors == True,:]
+
+    X = df_non_overlapping.drop(['RSV_test_result'], axis=1)
+    y = df_non_overlapping['RSV_test_result']
+    X_train, X_test_nonOverlapping, y_train, y_test_nonOverlapping = train_test_split(X, y, test_size= test_size, random_state=random_seed,
+                                                        stratify= y)
+
+    X_train = pd.get_dummies(X_train)
+    X_test_nonOverlapping = pd.get_dummies (X_test_nonOverlapping)
+
+    if cost_sensitive_non_overlapping:
+        model_class_non_overlapping.set_params(class_weight=weight_dict_non_overlapping, random_state=random_seed)
+    else:
+        model_class_non_overlapping.set_params(class_weight=None, random_state=random_seed)
+
+
+    target_scorer = make_scorer(f1_score, average='binary', pos_label = 'Positive')
+    n_cv_folds = 5
+
+    model1_nonOverlapping = train_model_rsv(model = model_class_non_overlapping, param_grid = param_grid_non_overlapping, target_scorer = target_scorer, n_cv_folds = n_cv_folds,
+                        X_train = X_train, y_train = y_train)
+    
+    # Evaluation of the non-overlapping region
+    print('\n----------------')
+    print('Performance metrics of non-overlapping model ...')
+    optimal_threshold_nonOverlapping = find_optimal_moving_threshold(model = model1_nonOverlapping, X_test = X_test_nonOverlapping, y_test = y_test_nonOverlapping)
+
+    __,__,__,__,__,__,f1,__ = calculate_performance_metrics_rsv(trained_model = model1_nonOverlapping, X_test = X_test_nonOverlapping, y_test = y_test_nonOverlapping,
+                                                         threshold = optimal_threshold_nonOverlapping, 
+                                                         print_roc = False, print_pr = False)
+    
+    # ----------------------------------
+    # Model for Overlapping region
+    print('----------------')
+    print('Building (yes) overlapping model ...')
+    
+    df_overlapping = df1.loc[ same_class_neighbors == False,:]
+
+    X = df_overlapping.drop(['RSV_test_result'], axis=1)
+    y = df_overlapping['RSV_test_result']
+    X_train, X_test_Overlapping, y_train, y_test_Overlapping = train_test_split(X, y, test_size= test_size, random_state=random_seed,
+                                                            stratify= y)
+
+    X_train = pd.get_dummies(X_train)
+    X_test_Overlapping = pd.get_dummies (X_test_Overlapping)
+
+    if cost_sensitive_overlapping:
+        model_class_overlapping.set_params(class_weight=weight_dict_overlapping, random_state=random_seed)
+    else:
+        model_class_overlapping.set_params(class_weight=None, random_state=random_seed)
+
+
+    target_scorer = make_scorer(f1_score, average='binary', pos_label = 'Positive')
+    n_cv_folds = 5
+
+    model1_Overlapping = train_model_rsv(model = model_class_overlapping, param_grid = param_grid_overlapping, target_scorer = target_scorer, n_cv_folds = n_cv_folds,
+                        X_train = X_train, y_train = y_train)
+    
+    # Evaluation of the overlapping region
+    print('\n----------------')
+    print('Performance metrics of (yes) overlapping model ...')
+    optimal_threshold_Overlapping = find_optimal_moving_threshold(model = model1_Overlapping, X_test = X_test_Overlapping, y_test = y_test_Overlapping)
+
+    __,__,__,__,__,__,f1,__ = calculate_performance_metrics_rsv(trained_model = model1_Overlapping, X_test = X_test_Overlapping, y_test = y_test_Overlapping,
+                                                         threshold = optimal_threshold_Overlapping, 
+                                                         print_roc = False, print_pr = False)
+
+    # Evaluation of the aggregated model
+
+    y_probs_nonOverlapping, pred_nonOverlapping = pred_custom(model1 = model1_nonOverlapping, X_test = X_test_nonOverlapping, optimal_threshold = optimal_threshold_nonOverlapping)
+    y_probs_overlapping, pred_overlapping = pred_custom(model1 = model1_Overlapping, X_test = X_test_Overlapping, optimal_threshold = optimal_threshold_Overlapping)
+
+    pred = pred_nonOverlapping + pred_overlapping
+    y_probs = np.concatenate([y_probs_nonOverlapping, y_probs_overlapping])
+    true = pd.concat([y_test_nonOverlapping, y_test_Overlapping], axis = 0)
+
+    accuracy = accuracy_score(true, pred)
+    precision = precision_score(true, pred, pos_label = 'Positive')
+    recall = recall_score(true, pred, pos_label = 'Positive')
+    f1 = f1_score(true, pred, pos_label = 'Positive')
+    roc_auc = roc_auc_score(true, y_probs)
+    spec = specificity(true, pred)
+    npv = negative_predictive_value(true, pred)
+    precision_curve, recall_curve, _ = precision_recall_curve(true, y_probs, pos_label = 'Positive')
+    pr_auc = auc(recall_curve, precision_curve)
+
+    print('\n-------')
+    print('Performance metrics of the aggregated model')
+
+    print(f"Accuracy: {accuracy}")
+    print(f"Precision: {precision}")
+    print(f"Recall/Sensitivity: {recall}")
+    print(f"F1-score: {f1}")
+    print(f"ROC AUC: {roc_auc}")
+    print(f"Specificity: {spec}")
+    print(f"Negative Predictive Value: {npv}")
+    print(f"Precision-Recall AUC: {pr_auc}")
+
+
+    
+    return model1_nonOverlapping, model1_Overlapping
