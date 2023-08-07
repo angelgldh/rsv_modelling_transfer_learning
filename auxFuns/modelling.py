@@ -498,6 +498,33 @@ def find_optimal_moving_threshold(model, X_test, y_test,
 
     return optimal_threshold
 
+def find_optimal_moving_threshold_from_probas(y_probs, y_test, 
+                                  ICLL = False):
+    """
+    This function finds the optimal threshold for a binary classifier that maximizes the F1 score
+
+    Parameters:
+    - y_probs (nd-array): The probabilities for 'Positive' label of the trained model
+    - y_test (pd.Series): The testing labels.
+
+    Returns:
+    - optimal_threshold (float): The optimal threshold that maximizes F1 score.
+    """
+    aux_y_test = [1 if label == 'Positive' else 0 for label in y_test]
+
+    thresholds = np.arange(0, 1, 0.01)  # generate a range of possible thresholds
+
+    f1_scores = [f1_score(y_true= aux_y_test, y_pred = ([1 if y > threshold else 0 for y in y_probs])) for threshold in thresholds]
+
+    optimal_threshold = thresholds[np.argmax(f1_scores)]  # find threshold that maximized F1 score
+    optimal_f1 = np.max(f1_scores)
+
+    print(f'Optimal threshold: {optimal_threshold}')
+    print(f'Optimal f1: {optimal_f1}')
+    print('\n')
+
+    return optimal_threshold
+
 def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 0.5, print_roc = False, print_pr = False,
                                   ICLL = False):
     """
@@ -528,6 +555,101 @@ def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 
         y_probs = trained_model.predict_proba(X_test)
     else:
         y_probs = trained_model.predict_proba(X_test)[:, 1]  # get the predicted probabilities for positive class
+
+    y_pred = ["Positive" if p > threshold else "Negative"  for p in y_probs]
+
+    # 2. Calculate the confusion matrix metrics
+    cm = confusion_matrix(y_test, y_pred)
+    tn = cm[0, 0]
+    fp = cm[0, 1]
+    fn = cm[1, 0]
+    tp = cm[1, 1]
+
+    precision = tp / (tp + fp)
+    recall = tp / (tp + fn)
+    sensitivity = recall
+    specificity = tn / (tn + fp)
+    ppv = precision
+    npv = tn / (tn + fn)
+    accuracy = (tp + tn)/(tp + tn + fp + fn)
+    f1_aux = 2 * (precision * recall) / (precision + recall)
+    f1 = f1_score(y_true= y_test, y_pred=y_pred, pos_label= "Positive")
+
+    if f1_aux != f1:
+        raise ValueError("F1_aux and F1 scores do not coincide.")
+
+    # 3. Calculate the roc curve
+    aux_y_test = [1 if label == 'Positive' else 0 for label in y_test]
+    fpr, tpr, thresholds = roc_curve(aux_y_test, y_probs)
+
+    auc_score = roc_auc_score(aux_y_test, y_probs)
+
+    # 4. Precision-recall curve
+    precisions, recalls, _ = precision_recall_curve(aux_y_test, y_probs)
+    precision_recall_auc = auc(recalls, precisions)
+
+
+    # 5. Print metrics and (if requested) the ROC Curve
+    print(f'AUC Score: {auc_score}')
+    print(f'Precision / Positive predictive value: {precision}')
+    print(f'Specificity: {specificity}')
+    print(f'Recall / sensitivity: {recall}')
+    print(f'Negative predictive value: {npv}')
+    print(f'Accuracy: {accuracy}')
+    print(f'F-1: {f1}')
+    print(f'Precision-Recall AUC: {precision_recall_auc}')
+
+
+    if print_roc:
+        plt.figure()
+        plt.plot(fpr, tpr, label='ROC curve (area = %0.2f)' % auc_score)
+        plt.plot([0, 1], [0, 1], 'k--')  # random predictions curve
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.0])
+        plt.xlabel('False Positive Rate or (1 - Specifity)')
+        plt.ylabel('True Positive Rate or (Sensitivity)')
+        plt.title('Receiver Operating Characteristic')
+        plt.legend(loc="lower right")
+        plt.show()
+
+    if print_pr:
+        plt.figure()
+        plt.plot(recalls, precisions, label='PR curve (area = %0.2f)' % precision_recall_auc)
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.0])
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title('Precision-Recall curve')
+        plt.legend(loc="upper right")
+        plt.show()
+
+    return auc_score, precision, recall, specificity, npv, accuracy, f1, precision_recall_auc
+
+
+def calculate_performance_metrics_from_probas(y_probs, y_test, threshold= 0.5, print_roc = False, print_pr = False,
+                                  ICLL = False):
+    """
+    Calculates performance metrics for the RSV phase 1 modelling stage based on the trained model's predictions.
+
+    Parameters:
+    - y_probs (nd-array): The probabilities for 'Positive' label of the trained model
+    - y_test (pd.Series): The testing labels.
+    - threshold (int): decision threshold for the binary classification
+    - print_roc (boolean): Whether to print the ROC curve. Defaults to False.
+    - print_pr (boolean): Whether to print the precision-recall curve. Defaults to False.
+
+    Returns:
+    - auc_score (float): The Area Under the ROC Curve .
+    - precision (float): Precision or Positive Predictive Value.
+    - recall (float): Recall or Sensitivity.
+    - specificity (float): Specificity.
+    - npv (float): Negative Predictive Value.
+    - accuracy (float): Accuracy.
+    - f1 (float): F1-score.
+    - precision_recall_auc: area under the pr curve
+    """
+
+    # 1. First, compute predictions of the model, both pointwise and in probabilities
 
     y_pred = ["Positive" if p > threshold else "Negative"  for p in y_probs]
 
