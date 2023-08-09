@@ -10,16 +10,16 @@ from sklearn.metrics import make_scorer, f1_score, confusion_matrix, roc_auc_sco
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV, train_test_split
 
-def plot_3FMDA_planes(df, hue_target, palette = None, main_title = ''):
+def plot_3FMDA_planes(df, hue_target, palette = None, main_title = '', s_size = 1):
     f, axes = plt.subplots(1, 3, figsize=(12, 6))
 
-    sns.scatterplot(data=df, x=0, y=1, hue=hue_target, ax=axes[0], s = 1, palette = palette)
+    sns.scatterplot(data=df, x=0, y=1, hue=hue_target, ax=axes[0], s = s_size, palette = palette)
     axes[0].set_title('Component 1 vs Component 2')
 
-    sns.scatterplot(data=df, x=0, y=2, hue=hue_target, ax=axes[1], s = 1, palette = palette)
+    sns.scatterplot(data=df, x=0, y=2, hue=hue_target, ax=axes[1], s = s_size, palette = palette)
     axes[1].set_title('Component 1 vs Component 3')
 
-    sns.scatterplot(data=df, x=1, y=2, hue=hue_target, ax=axes[2], s = 1, palette = palette)
+    sns.scatterplot(data=df, x=1, y=2, hue=hue_target, ax=axes[2], s = s_size, palette = palette)
     axes[2].set_title('Component 2 vs Component 3')
 
     f.suptitle(main_title, y=0.98)
@@ -250,3 +250,5 @@ def build_and_evaluate_2overlapping_models(df1, same_class_neighbors, test_size 
 
     
     return model1_nonOverlapping, model1_Overlapping
+
+
