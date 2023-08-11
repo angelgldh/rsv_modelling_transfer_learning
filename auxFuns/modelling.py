@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.model_selection import GridSearchCV, train_test_split, ParameterGrid
 from sklearn.metrics import f1_score, make_scorer, confusion_matrix, roc_auc_score, roc_curve, precision_recall_curve, auc
 from sklearn.preprocessing import FunctionTransformer, StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
@@ -13,6 +13,7 @@ from imblearn.over_sampling import RandomOverSampler, SMOTEN, SMOTENC
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.pipeline import Pipeline as ImbPipeline
 from sklearn.utils import class_weight
+from tqdm import tqdm
 
 
 def preprocess_rsv (df1, input_test_size = 0.2, random_seed = 42):
@@ -463,27 +464,91 @@ def train_model_rsv(model, param_grid, target_scorer, n_cv_folds,
 
     return grid_search
 
+def progress_callback(progress_bar):
+    def callback(result):
+        progress_bar.update(1)
+    return callback
+
+def train_model_gridsearch(model_class, param_grid, target_scorer, n_cv_folds,
+                    X_train, y_train, sample_weights = None):
+    """
+    Trains a cross-validated ML model of custom model_class, parameter grid, target scorer and number 
+    of cross-validation folds.
+
+    This function is equivalent to 
+
+    Parameters:
+    - model (object): The model object or estimator to be trained.
+    - param_grid (dict): The dictionary of parameter grid for grid search.
+    - target_scorer (str oor callable): The scoring metric for evaluating the model.
+    - n_cv_folds (ind): The number of cross-validation folds.
+    - X_train (nd-array): The training features (array-like or sparse matrix).
+    - y_train (pd.series): The training labels (array-like).
+
+    Returns:
+    - grid_search (GridSearchCV): The trained grid search object.
+    """
+    if sample_weights is None:
+        sample_weights = np.ones_like(y_train)
+
+    # class TqdmGridSearchCV(GridSearchCV):
+    #     def __init__(self, *args, **kwargs):
+    #         super().__init__(*args, **kwargs)
+    #         self._param_list = list(ParameterGrid(self.param_grid))
+    #         self._iterable = tqdm(self._param_list, total=len(self._param_list), desc="GridSearch Progress")
+        
+    #     def _get_param_iterator(self):
+    #         return iter(self._iterable)
+
+    # Option 1: no progress bar
+    grid_search = GridSearchCV(estimator=model_class, param_grid=param_grid, scoring=target_scorer, cv=n_cv_folds)
+
+    # Option 2: Tqdm progress bar
+    # grid_search = TqdmGridSearchCV(estimator=model_class, param_grid=param_grid, scoring=target_scorer, cv=n_cv_folds)
+
+    # Option 3: pbar progress bar
+    # param_list = list(ParameterGrid(param_grid))
+    # pbar = tqdm(total=len(param_list), desc="GridSearch Progress")
+    # grid_search = GridSearchCV(estimator=model_class,
+    #                         param_grid=param_grid,
+    #                         scoring=target_scorer,
+    #                         cv=n_cv_folds,
+    #                         verbose=0,
+    #                         error_score='raise',
+    #                         return_train_score=True,
+    #                         callback=progress_callback(pbar))
+
+    print(f'Training model ... {model_class}')
+
+    grid_search.fit(X_train, y_train, sample_weight = sample_weights)
+
+    print('Best training parameters: ', grid_search.best_params_)
+    print('Best training f1-score: ', grid_search.best_score_)
+
+    return grid_search
 
 
-def find_optimal_moving_threshold(model, X_test, y_test, 
-                                  ICLL = False):
+
+
+def find_optimal_moving_threshold(trained_model, X_test, y_test, 
+                                  ICLL = False, pos_label = 'Positive'):
     """
     This function finds the optimal threshold for a binary classifier that maximizes the F1 score
 
     Parameters:
-    - model (object): The trained model object.
+    - trained_model (object): The trained model object.
     - X_test (nd-array): The testing features.
     - y_test (pd.Series): The testing labels.
 
     Returns:
     - optimal_threshold (float): The optimal threshold that maximizes F1 score.
     """
-    aux_y_test = [1 if label == 'Positive' else 0 for label in y_test]
+    aux_y_test = [1 if label == pos_label else 0 for label in y_test]
 
     if ICLL:
-        y_probs = model.predict_proba(X_test)
+        y_probs = trained_model.predict_proba(X_test)
     else:
-        y_probs = model.predict_proba(X_test)[:, 1]  # get the predicted probabilities for positive class
+        y_probs = trained_model.predict_proba(X_test)[:, 1]  # get the predicted probabilities for positive class
 
     thresholds = np.arange(0, 1, 0.01)  # generate a range of possible thresholds
 
@@ -499,7 +564,7 @@ def find_optimal_moving_threshold(model, X_test, y_test,
     return optimal_threshold
 
 def find_optimal_moving_threshold_from_probas(y_probs, y_test, 
-                                  ICLL = False):
+                                  ICLL = False, verbose = True):
     """
     This function finds the optimal threshold for a binary classifier that maximizes the F1 score
 
@@ -519,14 +584,15 @@ def find_optimal_moving_threshold_from_probas(y_probs, y_test,
     optimal_threshold = thresholds[np.argmax(f1_scores)]  # find threshold that maximized F1 score
     optimal_f1 = np.max(f1_scores)
 
-    print(f'Optimal threshold: {optimal_threshold}')
-    print(f'Optimal f1: {optimal_f1}')
-    print('\n')
+    if verbose:
+        print(f'Optimal threshold: {optimal_threshold}')
+        print(f'Optimal f1: {optimal_f1}')
+        print('\n')
 
     return optimal_threshold
 
 def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 0.5, print_roc = False, print_pr = False,
-                                  ICLL = False):
+                                  ICLL = False, pos_label = 'Positive', neg_label = 'Negative'):
     """
     Calculates performance metrics for the RSV phase 1 modelling stage based on the trained model's predictions.
 
@@ -556,7 +622,7 @@ def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 
     else:
         y_probs = trained_model.predict_proba(X_test)[:, 1]  # get the predicted probabilities for positive class
 
-    y_pred = ["Positive" if p > threshold else "Negative"  for p in y_probs]
+    y_pred = [pos_label if p > threshold else neg_label  for p in y_probs]
 
     # 2. Calculate the confusion matrix metrics
     cm = confusion_matrix(y_test, y_pred)
@@ -573,13 +639,13 @@ def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 
     npv = tn / (tn + fn)
     accuracy = (tp + tn)/(tp + tn + fp + fn)
     f1_aux = 2 * (precision * recall) / (precision + recall)
-    f1 = f1_score(y_true= y_test, y_pred=y_pred, pos_label= "Positive")
+    f1 = f1_score(y_true= y_test, y_pred=y_pred, pos_label= pos_label)
 
     if f1_aux != f1:
         raise ValueError("F1_aux and F1 scores do not coincide.")
 
     # 3. Calculate the roc curve
-    aux_y_test = [1 if label == 'Positive' else 0 for label in y_test]
+    aux_y_test = [1 if label == pos_label else 0 for label in y_test]
     fpr, tpr, thresholds = roc_curve(aux_y_test, y_probs)
 
     auc_score = roc_auc_score(aux_y_test, y_probs)
@@ -627,7 +693,7 @@ def calculate_performance_metrics_rsv(trained_model, X_test, y_test, threshold= 
 
 
 def calculate_performance_metrics_from_probas(y_probs, y_test, threshold= 0.5, print_roc = False, print_pr = False,
-                                  ICLL = False):
+                                  ICLL = False, verbose = True):
     """
     Calculates performance metrics for the RSV phase 1 modelling stage based on the trained model's predictions.
 
@@ -685,14 +751,15 @@ def calculate_performance_metrics_from_probas(y_probs, y_test, threshold= 0.5, p
 
 
     # 5. Print metrics and (if requested) the ROC Curve
-    print(f'AUC Score: {auc_score}')
-    print(f'Precision / Positive predictive value: {precision}')
-    print(f'Specificity: {specificity}')
-    print(f'Recall / sensitivity: {recall}')
-    print(f'Negative predictive value: {npv}')
-    print(f'Accuracy: {accuracy}')
-    print(f'F-1: {f1}')
-    print(f'Precision-Recall AUC: {precision_recall_auc}')
+    if verbose:
+        print(f'AUC Score: {auc_score}')
+        print(f'Precision / Positive predictive value: {precision}')
+        print(f'Specificity: {specificity}')
+        print(f'Recall / sensitivity: {recall}')
+        print(f'Negative predictive value: {npv}')
+        print(f'Accuracy: {accuracy}')
+        print(f'F-1: {f1}')
+        print(f'Precision-Recall AUC: {precision_recall_auc}')
 
 
     if print_roc:

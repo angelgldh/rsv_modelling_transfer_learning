@@ -9,6 +9,8 @@ from auxFuns.modelling import train_model_rsv, find_optimal_moving_threshold, ca
 from sklearn.metrics import make_scorer, f1_score, confusion_matrix, roc_auc_score, roc_curve, precision_recall_curve, auc, accuracy_score, precision_score, recall_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.neighbors import BallTree
+import scipy.stats
 
 def plot_3FMDA_planes(df, hue_target, palette = None, main_title = '', s_size = 1):
     f, axes = plt.subplots(1, 3, figsize=(12, 6))
@@ -251,4 +253,144 @@ def build_and_evaluate_2overlapping_models(df1, same_class_neighbors, test_size 
     
     return model1_nonOverlapping, model1_Overlapping
 
+def rename_key(d, old_key, new_key):
+    if old_key in d:
+        d[new_key] = d.pop(old_key)
+    return d
 
+def only_build_2overlapping_models(X, labels, same_class_neighbors, random_seed = 42,
+                                           model_class_non_overlapping = RandomForestClassifier(),
+                                           param_grid_non_overlapping = {'n_estimators': [7, 14],'max_depth': [10, 20],'min_samples_split': [5, 10],'min_samples_leaf': [1, 4]},
+                                           cost_sensitive_non_overlapping = True, weight_dict_non_overlapping = {'Negative': 1, 'Positive': 15},
+                                           model_class_overlapping = RandomForestClassifier(),
+                                           param_grid_overlapping = {'n_estimators': [7, 14],'max_depth': [10, 20],'min_samples_split': [5, 10],'min_samples_leaf': [1, 4]},
+                                           cost_sensitive_overlapping = True, weight_dict_overlapping = {'Negative': 1, 'Positive': 15},
+                                           pos_label = 'Positive', neg_label = 'Negative', label_name = 'RSV_test_result'
+
+                                           ):
+    rename_key(d = weight_dict_non_overlapping, old_key = 'Positive', new_key = pos_label)
+    rename_key(d = weight_dict_non_overlapping, old_key = 'Negative', new_key = neg_label)
+
+    rename_key(d = weight_dict_overlapping, old_key = 'Positive', new_key = pos_label)
+    rename_key(d = weight_dict_overlapping, old_key = 'Negative', new_key = neg_label)
+
+    # ----------------------------------
+    # Model for NON-overlapping region
+    print('----------------')
+    print('Building non-overlapping model ...')
+
+    X = X.reset_index(drop = True)
+    labels = labels.reset_index(drop = True)
+    df1 = pd.concat([X, labels], axis = 1)
+
+    df_non_overlapping = df1.loc[ same_class_neighbors == True,:]
+
+    X_non_overlapping = df_non_overlapping.drop([label_name], axis=1)
+    y_non_overlapping = df_non_overlapping[label_name]
+
+    X_non_overlapping = pd.get_dummies(X_non_overlapping)
+
+    if cost_sensitive_non_overlapping:
+        model_class_non_overlapping.set_params(class_weight=weight_dict_non_overlapping, random_state=random_seed)
+    else:
+        model_class_non_overlapping.set_params(class_weight=None, random_state=random_seed)
+
+
+    target_scorer = make_scorer(f1_score, average='binary', pos_label = pos_label)
+    n_cv_folds = 5
+
+    model1_nonOverlapping = train_model_rsv(model = model_class_non_overlapping, param_grid = param_grid_non_overlapping, target_scorer = target_scorer, n_cv_folds = n_cv_folds,
+                        X_train = X_non_overlapping, y_train = y_non_overlapping)
+    
+    # # Evaluation of the non-overlapping region
+    # print('\n----------------')
+    # print('Performance metrics of non-overlapping model ...')
+    # optimal_threshold_nonOverlapping = find_optimal_moving_threshold(model = model1_nonOverlapping, X_test = X_test_nonOverlapping, y_test = y_test_nonOverlapping)
+
+    # __,__,__,__,__,__,f1,__ = calculate_performance_metrics_rsv(trained_model = model1_nonOverlapping, X_test = X_test_nonOverlapping, y_test = y_test_nonOverlapping,
+    #                                                      threshold = optimal_threshold_nonOverlapping, 
+    #                                                      print_roc = False, print_pr = False)
+    
+    # ----------------------------------
+    # Model for Overlapping region
+    print('----------------')
+    print('Building (yes) overlapping model ...')
+    
+    df_overlapping = df1.loc[ same_class_neighbors == False,:]
+
+    X_overlapping = df_overlapping.drop([label_name], axis=1)
+    y_overlapping = df_overlapping[label_name]
+
+    X_overlapping = pd.get_dummies(X_overlapping)
+
+    if cost_sensitive_overlapping:
+        model_class_overlapping.set_params(class_weight=weight_dict_overlapping, random_state=random_seed)
+    else:
+        model_class_overlapping.set_params(class_weight=None, random_state=random_seed)
+
+
+    target_scorer = make_scorer(f1_score, average='binary', pos_label = 'Positive')
+    n_cv_folds = 5
+
+    model1_Overlapping = train_model_rsv(model = model_class_overlapping, param_grid = param_grid_overlapping, target_scorer = target_scorer, n_cv_folds = n_cv_folds,
+                        X_train = X_overlapping, y_train = y_overlapping)
+    
+    
+    return model1_nonOverlapping, model1_Overlapping
+
+
+
+def distance_matrix_to_percentile(matrix):
+    """
+    Convert a distance matrix to its corresponding percentile matrix.
+    """
+    # Flatten the matrix and compute the rank for each distance
+    flat_matrix = matrix.flatten()
+    ranks = scipy.stats.rankdata(flat_matrix)
+    
+    # Convert ranks to percentiles
+    percentiles = 100.0 * ranks / (len(flat_matrix) - 1)
+    
+    # Reshape the flattened percentiles back to the original shape
+    percentile_matrix = percentiles.reshape(matrix.shape)
+    
+    return percentile_matrix
+
+
+def calculate_same_neighbours_and_N1(X ,y, n_neighbours = 5):
+
+    # Step 1: Ball tree 
+    print('Build-up of the ball tree ...')
+
+    tree2 = BallTree(X)
+
+    # Step 2: tree-guided closest neighbour
+    # The closest point to every instance is itself, so k = 2 returns the point itself + the closest neighbour
+    # let us take 5 (4 neighbours + 1 itself) closest neighbours to help in the prediction of overlapping instances 
+    print(f'Finding closest {n_neighbours - 1} neighbour(s) in the ball tree for every instance ...')
+    dist2, ind2 = tree2.query(X, k=n_neighbours)
+
+    # Step 3: same class neighbours
+    print('Determination of instances with same-class neighbours ...')
+    labels = y.to_numpy()
+    # same_class_neighbours2 = labels[ind2[:, 0]] == labels[ind2[:, 1]]
+    # N1_2 = 1 - np.mean(same_class_neighbours2)
+    # print(f'N1 metric: {N1_2}')
+
+    # Step 4: add a higher number of neighbours to evaluate a varying overlapping
+    same_class_neighbours_dict = {}
+    N1_dict = {}
+
+    for k in range(1, n_neighbours):
+        # For each k, we'll check for same class neighbors across all instances
+        same_class_neighbours2 = np.array([all(labels[i] == label for label in labels[ind2[j, 1:k+1]]) for j, i in enumerate(ind2[:, 0])])
+        N1_metric = 1 - np.mean(same_class_neighbours2)
+
+        same_class_neighbours_dict[k] = same_class_neighbours2
+        N1_dict[k] = N1_metric 
+
+        print(f'N1 metric for {k} neighbours : {N1_metric}')
+
+    print('Done!')
+
+    return same_class_neighbours_dict, N1_dict, dist2, ind2
