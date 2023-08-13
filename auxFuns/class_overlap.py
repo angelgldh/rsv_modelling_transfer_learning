@@ -176,7 +176,7 @@ def build_and_evaluate_2overlapping_models(df1, same_class_neighbors, test_size 
     # Evaluation of the non-overlapping region
     print('\n----------------')
     print('Performance metrics of non-overlapping model ...')
-    optimal_threshold_nonOverlapping = find_optimal_moving_threshold(model = model1_nonOverlapping, X_test = X_test_nonOverlapping, y_test = y_test_nonOverlapping)
+    optimal_threshold_nonOverlapping = find_optimal_moving_threshold(trained_model = model1_nonOverlapping, X_test = X_test_nonOverlapping, y_test = y_test_nonOverlapping)
 
     __,__,__,__,__,__,f1,__ = calculate_performance_metrics_rsv(trained_model = model1_nonOverlapping, X_test = X_test_nonOverlapping, y_test = y_test_nonOverlapping,
                                                          threshold = optimal_threshold_nonOverlapping, 
@@ -212,7 +212,7 @@ def build_and_evaluate_2overlapping_models(df1, same_class_neighbors, test_size 
     # Evaluation of the overlapping region
     print('\n----------------')
     print('Performance metrics of (yes) overlapping model ...')
-    optimal_threshold_Overlapping = find_optimal_moving_threshold(model = model1_Overlapping, X_test = X_test_Overlapping, y_test = y_test_Overlapping)
+    optimal_threshold_Overlapping = find_optimal_moving_threshold(trained_model = model1_Overlapping, X_test = X_test_Overlapping, y_test = y_test_Overlapping)
 
     __,__,__,__,__,__,f1,__ = calculate_performance_metrics_rsv(trained_model = model1_Overlapping, X_test = X_test_Overlapping, y_test = y_test_Overlapping,
                                                          threshold = optimal_threshold_Overlapping, 
@@ -265,8 +265,8 @@ def only_build_2overlapping_models(X, labels, same_class_neighbors, random_seed 
                                            model_class_overlapping = RandomForestClassifier(),
                                            param_grid_overlapping = {'n_estimators': [7, 14],'max_depth': [10, 20],'min_samples_split': [5, 10],'min_samples_leaf': [1, 4]},
                                            cost_sensitive_overlapping = True, weight_dict_overlapping = {'Negative': 1, 'Positive': 15},
-                                           pos_label = 'Positive', neg_label = 'Negative', label_name = 'RSV_test_result'
-
+                                           pos_label = 'Positive', neg_label = 'Negative', label_name = 'RSV_test_result',
+                                           sample_weights_Overlapping = None, sample_weights_nonOverlapping = None
                                            ):
     rename_key(d = weight_dict_non_overlapping, old_key = 'Positive', new_key = pos_label)
     rename_key(d = weight_dict_non_overlapping, old_key = 'Negative', new_key = neg_label)
@@ -300,7 +300,7 @@ def only_build_2overlapping_models(X, labels, same_class_neighbors, random_seed 
     n_cv_folds = 5
 
     model1_nonOverlapping = train_model_rsv(model = model_class_non_overlapping, param_grid = param_grid_non_overlapping, target_scorer = target_scorer, n_cv_folds = n_cv_folds,
-                        X_train = X_non_overlapping, y_train = y_non_overlapping)
+                        X_train = X_non_overlapping, y_train = y_non_overlapping, sample_weights=sample_weights_nonOverlapping)
     
     # # Evaluation of the non-overlapping region
     # print('\n----------------')
@@ -315,25 +315,29 @@ def only_build_2overlapping_models(X, labels, same_class_neighbors, random_seed 
     # Model for Overlapping region
     print('----------------')
     print('Building (yes) overlapping model ...')
-    
-    df_overlapping = df1.loc[ same_class_neighbors == False,:]
 
-    X_overlapping = df_overlapping.drop([label_name], axis=1)
-    y_overlapping = df_overlapping[label_name]
+    if (same_class_neighbors == False).sum() == 0:
+        print('Warning! No overlapping classes')
+        model1_Overlapping = None
+    else:   
+        df_overlapping = df1.loc[ same_class_neighbors == False,:]
 
-    X_overlapping = pd.get_dummies(X_overlapping)
+        X_overlapping = df_overlapping.drop([label_name], axis=1)
+        y_overlapping = df_overlapping[label_name]
 
-    if cost_sensitive_overlapping:
-        model_class_overlapping.set_params(class_weight=weight_dict_overlapping, random_state=random_seed)
-    else:
-        model_class_overlapping.set_params(class_weight=None, random_state=random_seed)
+        X_overlapping = pd.get_dummies(X_overlapping)
+
+        if cost_sensitive_overlapping:
+            model_class_overlapping.set_params(class_weight=weight_dict_overlapping, random_state=random_seed)
+        else:
+            model_class_overlapping.set_params(class_weight=None, random_state=random_seed)
 
 
-    target_scorer = make_scorer(f1_score, average='binary', pos_label = 'Positive')
-    n_cv_folds = 5
+        target_scorer = make_scorer(f1_score, average='binary', pos_label = 'Positive')
+        n_cv_folds = 5
 
-    model1_Overlapping = train_model_rsv(model = model_class_overlapping, param_grid = param_grid_overlapping, target_scorer = target_scorer, n_cv_folds = n_cv_folds,
-                        X_train = X_overlapping, y_train = y_overlapping)
+        model1_Overlapping = train_model_rsv(model = model_class_overlapping, param_grid = param_grid_overlapping, target_scorer = target_scorer, n_cv_folds = n_cv_folds,
+                            X_train = X_overlapping, y_train = y_overlapping, sample_weights= sample_weights_Overlapping)
     
     
     return model1_nonOverlapping, model1_Overlapping
@@ -394,3 +398,13 @@ def calculate_same_neighbours_and_N1(X ,y, n_neighbours = 5):
     print('Done!')
 
     return same_class_neighbours_dict, N1_dict, dist2, ind2
+
+
+def percentile_distances_df_buildup(percentile_matrix):
+    percentile_distance_df = pd.DataFrame(percentile_matrix, columns = ['percentile_distance_to_neighbour_n_' + str(ii + 1) for ii in range(percentile_matrix.shape[1])])
+    percentile_distance_df['mean_percentile_distance'] = np.mean(percentile_matrix, axis = 1)
+    percentile_distance_df['min_percentile_distance'] = np.min(percentile_matrix, axis = 1)
+    percentile_distance_df['max_percentile_distance'] = np.max(percentile_matrix, axis = 1)
+    percentile_distance_df['std_percentile_distance'] = np.std(percentile_matrix, axis = 1)
+
+    return percentile_distance_df
