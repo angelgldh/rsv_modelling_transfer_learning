@@ -76,7 +76,7 @@ def preprocess_rsv (df1, input_test_size = 0.2, random_seed = 42):
 
     return X_train_transformed, y_train, X_test_transformed, y_test, preprocessor
 
-def build_preprocessor(X_train):
+def build_preprocessor_rsvphase1(X_train):
     """
     This is a part of the preprocess_and_resample_rsv function, where only the code building the preprocessor is taken
 
@@ -135,6 +135,50 @@ def build_preprocessor(X_train):
             ('rac', race_transformer, ['race']),
             ('num_right', right_transformer, numeric_features_right),
             ('num_left', left_transformer, numeric_features_left)
+        ])
+    
+    return preprocessor
+
+
+
+def build_preprocessor_phase2(X):
+    """
+    This is a part of the preprocess_and_resample_rsv function, where only the code building the preprocessor is taken.
+    Specific to phase 2, as the subset of features of interest changes from phase 1 to phase 2
+
+    Builds a preprocessor object for feature transformations based on the input training data.
+
+    The function performs the following steps:
+    1. Selects the categorical and numeric features to be processed.
+    2. Defines transformers for each feature type.
+    3. Combines the transformers into a ColumnTransformer.
+
+    Parameters:
+    - X (DataFrame): The input (feature) data.
+
+    Returns:
+    - preprocessor (ColumnTransformer): The preprocessor object used for feature transformations.
+
+    """
+
+    # 1. Select the features that are needed to be processed and how
+    categorical_features = X.select_dtypes(include=['category']).columns.tolist()
+    numeric_features = X.select_dtypes(include=['float64', 'int64']).columns.tolist()
+
+
+    # 2. Define transformers for every feature type and build the preprocessor
+    # 2.1 Categorical features first
+    categorical_transformer = OneHotEncoder(drop = 'first')
+
+    # 2.2. Numeric features second
+    right_transformer = StandardScaler()
+
+    # 3. Finally, put all together and 
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('cat', categorical_transformer, categorical_features),
+            ('num_right', right_transformer, numeric_features),
         ])
     
     return preprocessor

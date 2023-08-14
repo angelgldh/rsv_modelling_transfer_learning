@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import ks_2samp, chi2_contingency, entropy
 import matplotlib.pyplot as plt
+from sklearn.neighbors import BallTree
 
 
 def plot_histograms(feature_values_source, feature_values_target, feature_name):
@@ -107,3 +108,32 @@ def analyze_feature(source_data, target_data, feature_name, categorical=False):
         intersection = histogram_intersection(source_hist, target_hist)
         print(f"Histogram Intersection: {intersection}")
     print("\n")
+
+
+def wasserstein_balltree(source, target, n_neighbours=2):
+    """
+    Compute the Wasserstein-like distance between source and target data using BallTree method.
+    Parameters:
+    - source (pd.DataFrame): features (X) of the source population
+    - target (pd.DataFrame): features (X) of the target population
+    - n-neighbours (int, float): number of closest neighbours (n_neighbours - 1) to determine. The closest is always itself, so 2 ensures it detects the closest-and different-instance
+
+    Return:
+    - wasserstein_equivalent (float): Wasserstein distance-equivalent built with the ball tree. Gives a measure of 'how much effort' is needed to take every point in the one population to the other
+    """
+    # Step 1: Compute the BallTree for source and target
+    tree_source = BallTree(source)
+    tree_target = BallTree(target)
+
+    # Step 2: For each point in source, find its closest point in target
+    dist_to_target, _ = tree_source.query(target, k=n_neighbours)
+    average_distance_to_target = np.mean(dist_to_target[:, 1])  # exclude the 0th column since it's distance to itself
+
+    # Step 3: For each point in target, find its closest point in source
+    dist_to_source, _ = tree_target.query(source, k=n_neighbours)
+    average_distance_to_source = np.mean(dist_to_source[:, 1])  # exclude the 0th column since it's distance to itself
+
+    # Compute the symmetric Wasserstein-like distance
+    wasserstein_equivalent = (average_distance_to_target + average_distance_to_source) / 2.0
+
+    return wasserstein_equivalent
