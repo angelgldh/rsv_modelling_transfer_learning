@@ -29,8 +29,8 @@ def plot_3FMDA_planes(df, hue_target, palette = None, main_title = '', s_size = 
 
     plt.tight_layout()
 
-def plot_5FMDA_planes(df, hue_target, palette = None, main_title = '', s_size = 1):
-    f, axes = plt.subplots(5, 2, figsize=(14, 24))
+def plot_5FMDA_planes(df, hue_target, palette = None, main_title = '', s_size = 1, figsize = (14,24)):
+    f, axes = plt.subplots(5, 2, figsize=figsize)
 
     # Two-dimensional plots
     sns.scatterplot(data=df, x=0, y=1, hue=hue_target, ax=axes[0, 0], s = s_size, palette=palette)
