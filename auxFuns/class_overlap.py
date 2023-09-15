@@ -136,7 +136,7 @@ def negative_predictive_value(y_true, y_pred):
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=['Negative', 'Positive']).ravel()
     return tn / (tn+fn)
 
-def build_and_evaluate_2overlapping_models(df1, same_class_neighbors, test_size = 0.2, random_seed = 42,
+def build_and_evaluate_2overlapping_models(df1, is_overlapping, test_size = 0.2, random_seed = 42,
                                            model_class_non_overlapping = RandomForestClassifier(),
                                            param_grid_non_overlapping = {'n_estimators': [7, 14],'max_depth': [10, 20],'min_samples_split': [5, 10],'min_samples_leaf': [1, 4]},
                                            cost_sensitive_non_overlapping = True, weight_dict_non_overlapping = {'Negative': 1, 'Positive': 15},
@@ -150,6 +150,7 @@ def build_and_evaluate_2overlapping_models(df1, same_class_neighbors, test_size 
 
     print('----------------')
     print('Building non-overlapping model ...')
+    same_class_neighbors = ~is_overlapping
 
     df_non_overlapping = df1.loc[ same_class_neighbors == True,:]
 
@@ -258,7 +259,7 @@ def rename_key(d, old_key, new_key):
         d[new_key] = d.pop(old_key)
     return d
 
-def only_build_2overlapping_models(X, labels, same_class_neighbors, random_seed = 42,
+def only_build_2overlapping_models(X, labels, is_overlapping, random_seed = 42,
                                            model_class_non_overlapping = RandomForestClassifier(),
                                            param_grid_non_overlapping = {'n_estimators': [7, 14],'max_depth': [10, 20],'min_samples_split': [5, 10],'min_samples_leaf': [1, 4]},
                                            cost_sensitive_non_overlapping = True, weight_dict_non_overlapping = {'Negative': 1, 'Positive': 15},
@@ -278,6 +279,7 @@ def only_build_2overlapping_models(X, labels, same_class_neighbors, random_seed 
     # Model for NON-overlapping region
     print('----------------')
     print('Building non-overlapping model ...')
+    same_class_neighbors = ~is_overlapping
 
     X = X.reset_index(drop = True)
     labels = labels.reset_index(drop = True)
@@ -408,3 +410,24 @@ def percentile_distances_df_buildup(percentile_matrix):
     percentile_distance_df['std_percentile_distance'] = np.std(percentile_matrix, axis = 1)
 
     return percentile_distance_df
+
+
+
+def find_augmented_n1_metric_from_same_neighbours (same_class_neighbours, labels):
+    standard_N1 = 1 - np.mean(same_class_neighbours)
+    print(f'Standard N1 metric: {standard_N1}')
+    
+    imb_ratio =  (labels == 'Negative').sum() /(labels == 'Positive').sum()
+
+    positives_mask = labels == 'Positive'
+    negatives_mask = labels == 'Negative'
+
+    N1_minority = 1 - np.mean(same_class_neighbours[positives_mask])
+    N1_majority = 1 - np.mean(same_class_neighbours[negatives_mask])
+
+    print(f'N1 metric for minority class (Positive): {N1_minority}')
+    print(f'N1 metric for majority class (Negative): {N1_majority}')
+
+    AugN1 = (1/(imb_ratio + 1)) * (N1_majority + imb_ratio*N1_minority) # defined so the N1 metric in minority is weighted according to the imb_ratio
+    print(f'Augmented  N1: {AugN1}')
+

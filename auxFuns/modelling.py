@@ -333,7 +333,7 @@ def downsampling_upweighting (X_train, y_train, ratio_maj_min, random_seed = 42)
 
 
 def preprocess_and_resample_rsv (df1, input_test_size = 0.2, random_seed = 42, 
-                             resampling_technique = None, ratio_maj_min = 0.8):
+                             resampling_technique = 'None', ratio_maj_min = 0.8, demographic_factors = False):
     """
     Preprocesses the input data for the RSV phase 1 modelling stage, by applying feature 
     transformations and splitting the data into training and testing sets.
@@ -365,11 +365,53 @@ def preprocess_and_resample_rsv (df1, input_test_size = 0.2, random_seed = 42,
     categorical_features = X_train.select_dtypes(include=['category']).columns.tolist()
     # categorical_features.remove('RSV_test_result')
     categorical_mask = X_train.columns.isin(categorical_features)
-    categorical_features.remove('calendar_year') # the reason behind this is that we will introduce manually the categories for calendar_year
-    categorical_features.remove('sex') # the reason behind this is that we will introduce manually the categories for sex
+
+    if demographic_factors: 
+        categorical_features.remove('calendar_year') # the reason behind this is that we will introduce manually the categories for calendar_year
+        categorical_features.remove('sex') # the reason behind this is that we will introduce manually the categories for sex
 
     numeric_features_right = ['CCI', 'n_symptoms', 'prev_positive_rsv', 'previous_test_daydiff', 'n_immunodeficiencies']
     numeric_features_left = ['sine', 'cosine']
+
+    # 3. Define transformers for every feature type and build the preprocessor
+    # 3.1 Categorical features first
+    categorical_transformer = OneHotEncoder(drop = 'first')
+    if demographic_factors: 
+        calendar_year_transformer = OneHotEncoder(categories= [sorted(list(df1['calendar_year'].unique()))] , drop = 'first')
+        sex_transformer = OneHotEncoder(categories= [['Unknown', 'F', 'M']] , drop = 'first')
+
+    # 3.2. Numeric features second
+    right_transformer = Pipeline(steps=[
+        ('log', FunctionTransformer(np.log1p, validate=False)),
+        ('scaler', StandardScaler())
+    ])
+
+    left_transformer = Pipeline(steps=[
+        ('exp', FunctionTransformer(np.exp, validate=False)),
+        ('scaler', StandardScaler())
+    ])
+
+    if demographic_factors:
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ('cat', categorical_transformer, categorical_features),
+                ('cal_year',calendar_year_transformer, ['calendar_year']),
+                ('se', sex_transformer, ['sex']),
+                ('num_right', right_transformer, numeric_features_right),
+                ('num_left', left_transformer, numeric_features_left)
+            ])
+    else: 
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ('cat', categorical_transformer, categorical_features),
+                ('num_right', right_transformer, numeric_features_right),
+                ('num_left', left_transformer, numeric_features_left)
+            ])
+
+    # 4. Finally, transform the data
+
+    X_train_transformed = preprocessor.fit_transform(X_train)
+    X_test_transformed = preprocessor.transform(X_test)
 
     # 2. Add resampling of the data
     print("Resampling method chosen:")
@@ -387,7 +429,7 @@ def preprocess_and_resample_rsv (df1, input_test_size = 0.2, random_seed = 42,
         resampler = SMOTENC(categorical_features = categorical_mask,
                             sampling_strategy= ratio_maj_min,random_state=random_seed)
 
-    elif resampling_technique is None:
+    elif resampling_technique == 'None':
         print("\nNone")
 
     elif resampling_technique == 'downsample_upweight':
@@ -411,6 +453,7 @@ def preprocess_and_resample_rsv (df1, input_test_size = 0.2, random_seed = 42,
 
         # this is to ensure the data is kept consistently
         all_data = pd.concat([X_train, y_train], axis=1)
+        
         all_data_majority_downsampled = all_data[majority_mask].sample(
             n = int(new_n_majority), random_state=random_seed
         )
@@ -422,13 +465,20 @@ def preprocess_and_resample_rsv (df1, input_test_size = 0.2, random_seed = 42,
 
         sample_weights = np.where(y_train == 'Negative', weights_dict['Negative'] * int(downsample_factor), weights_dict['Positive'])
 
+        X_train = preprocessor.fit_transform(X_train)
+        X_test = preprocessor.transform(X_test)
+
 
     else:
-        raise ValueError("Please, indicate a resampling technique. Accepted values are ['over', 'under', 'smotenc', 'downsample_upweight', None]")
+        raise ValueError("Please, indicate a resampling technique. Accepted values are ['over', 'under', 'smotenc', 'downsample_upweight', 'None']")
     
     # 2.1 Fit the resampler to the data
-    if resampling_technique is not None and resampling_technique != "downsample_upweight":
-        X_train, y_train = resampler.fit_resample(X_train, y_train)
+    if resampling_technique != 'None' and resampling_technique != "downsample_upweight":
+        X_train, y_train = resampler.fit_resample(X_train_transformed, y_train)
+        X_test = X_test_transformed
+    elif resampling_technique == 'None':
+        X_train = X_train_transformed
+        X_test = X_test_transformed
 
     if resampling_technique != "downsample_upweight":
         # weights = class_weight.compute_sample_weight('balanced', y_train)
@@ -440,41 +490,9 @@ def preprocess_and_resample_rsv (df1, input_test_size = 0.2, random_seed = 42,
 
         # The idea is to not have different weights unless we decide to upweight
         sample_weights = np.ones_like(y_train)
+    
 
-
-
-    # 3. Define transformers for every feature type and build the preprocessor
-    # 3.1 Categorical features first
-    categorical_transformer = OneHotEncoder(drop = 'first')
-    calendar_year_transformer = OneHotEncoder(categories= [sorted(list(df1['calendar_year'].unique()))] , drop = 'first')
-    sex_transformer = OneHotEncoder(categories= [['Unknown', 'F', 'M']] , drop = 'first')
-
-    # 3.2. Numeric features second
-    right_transformer = Pipeline(steps=[
-        ('log', FunctionTransformer(np.log1p, validate=False)),
-        ('scaler', StandardScaler())
-    ])
-
-    left_transformer = Pipeline(steps=[
-        ('exp', FunctionTransformer(np.exp, validate=False)),
-        ('scaler', StandardScaler())
-    ])
-
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ('cat', categorical_transformer, categorical_features),
-            ('cal_year',calendar_year_transformer, ['calendar_year']),
-            ('se', sex_transformer, ['sex']),
-            ('num_right', right_transformer, numeric_features_right),
-            ('num_left', left_transformer, numeric_features_left)
-        ])
-
-    # 4. Finally, transform the data
-
-    X_train_transformed = preprocessor.fit_transform(X_train)
-    X_test_transformed = preprocessor.transform(X_test)
-
-    return X_train_transformed, y_train, X_test_transformed, y_test, sample_weights, preprocessor
+    return X_train, y_train, X_test, y_test, sample_weights, preprocessor
 
 
 
@@ -608,11 +626,11 @@ def find_optimal_moving_threshold(trained_model, X_test, y_test,
     return optimal_threshold
 
 def find_optimal_moving_threshold_from_probas(y_probs, y_test, 
-                                  ICLL = False, verbose = True):
+                                  ICLL = False, verbose = True, thresholds = np.arange(0, 1, 0.01)):
     """
     This function finds the optimal threshold for a binary classifier that maximizes the F1 score
 
-    Parameters:
+    Parameters
     - y_probs (nd-array): The probabilities for 'Positive' label of the trained model
     - y_test (pd.Series): The testing labels.
 
@@ -620,8 +638,6 @@ def find_optimal_moving_threshold_from_probas(y_probs, y_test,
     - optimal_threshold (float): The optimal threshold that maximizes F1 score.
     """
     aux_y_test = [1 if label == 'Positive' else 0 for label in y_test]
-
-    thresholds = np.arange(0, 1, 0.01)  # generate a range of possible thresholds
 
     f1_scores = [f1_score(y_true= aux_y_test, y_pred = ([1 if y > threshold else 0 for y in y_probs])) for threshold in thresholds]
 
@@ -829,7 +845,7 @@ def calculate_performance_metrics_from_probas(y_probs, y_test, threshold= 0.5, p
         plt.legend(loc="upper right")
         plt.show()
 
-    return auc_score, precision, recall, specificity, npv, accuracy, f1, precision_recall_auc
+    return auc_score, precision, recall, specificity, npv, accuracy, f1, precision_recall_auc, fpr, tpr, recalls, precisions
 
 
 def get_feature_names_OneHotEncoder_preprocessor(column_transformer):
@@ -1058,3 +1074,62 @@ def plot_3FMDA_planes(df, hue_target, palette = None, main_title = ''):
     f.suptitle(main_title)
 
     plt.tight_layout()
+
+
+def get_sorted_importances(feature_importances_, feature_names, one_hot_roots):
+    """
+    Calculate and sort feature importances of a fitted random forest model
+    
+    Parameters:
+    - feature_importances_ (array-like): Feature importances obtained from a trained classifier.
+    - feature_names (array-like): Names of the features used in training the classifier.
+    - one_hot_roots (list of str): List of root names for one-hot encoded features.
+    
+    Returns:
+    - sorted_feature_names (list of str): Names of features sorted by their importances.
+    - sorted_feature_values (list of float): Sorted feature importances.
+    """
+    summed_importances = {}
+    for f_name, imp in zip(feature_names, feature_importances_):
+        original_name = f_name
+        for root in one_hot_roots:
+            if f_name.startswith(root):
+                original_name = root
+                break    
+        summed_importances[original_name] = summed_importances.get(original_name, 0) + imp
+    
+    sorted_importances = sorted(summed_importances.items(), key=lambda x: x[1], reverse=False)
+    sorted_feature_names = [x[0] for x in sorted_importances]
+    sorted_feature_values = [x[1] for x in sorted_importances]
+    
+    return sorted_feature_names, sorted_feature_values
+
+def plot_feature_importances(ax, sorted_feature_names, sorted_feature_values, title, color, horizontal_vertical = 'horizontal'):
+    """
+    Plot feature importances on a given subplot axis.
+    
+    Parameters:
+    - ax (matplotlib.axes._subplots.AxesSubplot): The subplot to plot on.
+    - sorted_feature_names (list of str): Names of features sorted by their importances.
+    - sorted_feature_values (list of float): Sorted feature importances.
+    - title (str): Title of the subplot.
+    - color (str): Color of the bars in the plot.
+    
+    Returns:
+    None
+    """
+    if horizontal_vertical == 'horizontal':
+        ax.barh(range(len(sorted_feature_names)), sorted_feature_values, align='center', color=color)
+        ax.set_yticks(range(len(sorted_feature_names)))
+        ax.set_yticklabels(sorted_feature_names, fontsize=10)
+        ax.set_xlabel('Importance')
+        ax.set_ylabel('Features')
+    elif horizontal_vertical == 'vertical':
+        ax.bar(range(len(sorted_feature_names)), sorted_feature_values, align='center', color=color)
+        ax.set_xticklabels(sorted_feature_names, rotation=90)
+        ax.set_xlabel('Features')
+        ax.set_ylabel('Importance')
+
+
+    
+    ax.set_title(title)
